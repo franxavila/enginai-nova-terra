@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ENGinAI — Nova Terra Cardápio</title>
+
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0f172a">
+
+    <!-- Tailwind CSS, FontAwesome & Supabase JS SDK -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        .pb-safe { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen pb-safe font-sans antialiased selection:bg-amber-500 selection:text-slate-950">
+
+    <!-- HEADER DE IDENTIFICAÇÃO DA MESA -->
+    <header class="bg-slate-800/95 backdrop-blur-md border-b border-slate-700/80 sticky top-0 z-40 px-4 py-3 shadow-lg flex justify-between items-center">
+        <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-500 font-bold">
+                <i class="fa-solid fa-utensils text-sm"></i>
+            </div>
+            <div>
+                <h1 class="text-sm font-bold text-slate-100 leading-tight">Nova Terra</h1>
+                <p class="text-[11px] text-amber-400/90 font-medium">Cardápio & Atendimento</p>
+            </div>
+        </div>
+
+        <div class="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-inner">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span id="mesa-label">Mesa 01</span>
+        </div>
+    </header>
+
+    <!-- BANNER BOAS-VINDAS -->
+    <section class="p-4 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-transparent border-b border-amber-500/20">
+        <div class="flex items-start gap-3 max-w-lg mx-auto">
+            <i class="fa-solid fa-circle-info text-amber-400 text-base mt-0.5"></i>
+            <div>
+                <h2 class="text-xs font-bold text-amber-300 uppercase tracking-wider">Seja bem-vindo(a)!</h2>
+                <p class="text-xs text-slate-300 mt-0.5 leading-relaxed">
+                    Escolha seus pratos abaixo. Toque nas categorias para filtrar o cardápio.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- BARRA DE FILTROS DINÂMICOS -->
+    <nav class="sticky top-[61px] z-30 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 py-2.5 flex gap-2 overflow-x-auto no-scrollbar" id="categories-bar">
+        <button onclick="filtrarCategoria('todos', this)" class="cat-btn bg-amber-500 text-slate-950 font-bold text-xs px-4 py-2 rounded-full whitespace-nowrap shadow-md transition">Todos os Pratos</button>
+        <button onclick="filtrarCategoria('Executivos', this)" class="cat-btn bg-slate-800 text-slate-300 hover:bg-slate-700 font-medium text-xs px-4 py-2 rounded-full whitespace-nowrap transition">Executivos</button>
+        <button onclick="filtrarCategoria('Massas', this)" class="cat-btn bg-slate-800 text-slate-300 hover:bg-slate-700 font-medium text-xs px-4 py-2 rounded-full whitespace-nowrap transition">Massas</button>
+        <button onclick="filtrarCategoria('Sobremesas', this)" class="cat-btn bg-slate-800 text-slate-300 hover:bg-slate-700 font-medium text-xs px-4 py-2 rounded-full whitespace-nowrap transition">Sobremesas</button>
+        <button onclick="filtrarCategoria('Bebidas', this)" class="cat-btn bg-slate-800 text-slate-300 hover:bg-slate-700 font-medium text-xs px-4 py-2 rounded-full whitespace-nowrap transition">Bebidas</button>
+    </nav>
+
+    <!-- FEED DO CARDÁPIO (CARREGADO DINAMICAMENTE DO SUPABASE) -->
+    <main class="p-4 max-w-lg mx-auto space-y-4" id="products-container">
+        <p id="loading-msg" class="text-center text-xs text-slate-500 py-8">Carregando cardápio em tempo real...</p>
+    </main>
+
+    <!-- BARRA INFERIOR FIXA -->
+    <nav class="fixed bottom-0 left-0 right-0 z-50 bg-slate-800/95 backdrop-blur-md border-t border-slate-700/80 px-6 py-2 shadow-2xl flex justify-between items-center max-w-lg mx-auto">
+        <button onclick="window.scrollTo({top: 0, behavior: 'smooth'})" class="flex flex-col items-center gap-1 text-amber-500">
+            <i class="fa-solid fa-house text-base"></i>
+            <span class="text-[10px] font-medium">Início</span>
+        </button>
+        <button onclick="chamarGarconete()" class="flex flex-col items-center gap-1 text-slate-400 hover:text-amber-400 active:text-amber-300 transition">
+            <i class="fa-solid fa-bell text-base"></i>
+            <span class="text-[10px] font-medium">Garçonete</span>
+        </button>
+        <button onclick="abrirCarrinho()" class="relative flex flex-col items-center gap-1 text-slate-400 hover:text-amber-400 active:text-amber-300 transition">
+            <i class="fa-solid fa-cart-shopping text-base"></i>
+            <span id="cart-badge" class="hidden absolute -top-1.5 -right-2 bg-amber-500 text-slate-950 font-extrabold text-[10px] w-4.5 h-4.5 rounded-full flex items-center justify-center border-2 border-slate-800">0</span>
+            <span class="text-[10px] font-medium">Carrinho</span>
+        </button>
+        <button onclick="solicitarConta()" class="flex flex-col items-center gap-1 text-slate-400 hover:text-emerald-400 active:text-emerald-300 transition">
+            <i class="fa-solid fa-receipt text-base"></i>
+            <span class="text-[10px] font-medium">Conta</span>
+        </button>
+    </nav>
+
+    <!-- LÓGICA DE INTEGRAÇÃO SUPABASE REALTIME -->
+    <script>
+        const SUPABASE_URL = 'https://riwinsdveamjhgxumnpe.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_z5h3mIH6oANIvJ53nozOgw_1fAuiuBi';
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let carrinho = [];
+        let produtosAtivos = [];
+        let categoriaAtual = 'todos';
+
+        // Capturar número da mesa pela URL (ex: index.html?mesa=02)
+        const urlParams = new URLSearchParams(window.location.search);
+        const mesaIdentificada = urlParams.get('mesa') || '01';
+        document.getElementById('mesa-label').innerText = `Mesa ${mesaIdentificada}`;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            carregarCardapioAoVivo();
+
+            // Escutar alterações na tabela de produtos (se pausar no admin, atualiza o cliente em tempo real)
+            supabaseClient
+                .channel('client-products-sync')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'produtos' }, () => {
+                    console.log("🔄 Cardápio atualizado no Supabase! Recarregando...");
+                    carregarCardapioAoVivo();
+                })
+                .subscribe();
+        });
+
+        async function carregarCardapioAoVivo() {
+            try {
+                // Selecionar APENAS pratos marcados como ATIVOS (ativo = true)
+                const { data, error } = await supabaseClient
+                    .from('produtos')
+                    .select('*')
+                    .eq('ativo', true)
+                    .order('id', { ascending: true });
+
+                if (error) throw error;
+
+                produtosAtivos = data || [];
+                renderizarCardapio(produtosAtivos);
+            } catch (err) {
+                console.error("Erro ao carregar cardápio:", err.message);
+                document.getElementById('loading-msg').innerText = "Erro ao carregar o cardápio. Verifique a conexão.";
+            }
+        }
+
+        function renderizarCardapio(produtos) {
+            const container = document.getElementById('products-container');
+            container.innerHTML = '';
+
+            if (produtos.length === 0) {
+                container.innerHTML = `<p class="text-center text-xs text-slate-400 py-12">Nenhum prato disponível no momento.</p>`;
+                return;
+            }
+
+            produtos.forEach(prato => {
+                const visivel = (categoriaAtual === 'todos' || prato.categoria === categoriaAtual) ? 'flex' : 'none';
+                
+                const cardHTML = `
+                    <article data-categoria="${prato.categoria}" style="display: ${visivel};" class="product-card bg-slate-800/80 rounded-2xl overflow-hidden border border-slate-700/60 shadow-xl flex flex-col sm:flex-row transition active:scale-[0.99]">
+                        <img src="${prato.imagem_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80'}" alt="${prato.nome}" class="w-full sm:w-36 h-36 object-cover">
+                        <div class="p-3.5 flex flex-col justify-between flex-1">
+                            <div>
+                                <div class="flex justify-between items-start gap-2">
+                                    <h3 class="font-bold text-slate-100 text-sm">${prato.nome}</h3>
+                                    <span class="text-amber-400 font-extrabold text-sm whitespace-nowrap">R$&nbsp;${Number(prato.preco).toFixed(2)}</span>
+                                </div>
+                                <p class="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">${prato.descricao || 'Prato preparado no capricho pela cozinha Nova Terra.'}</p>
+                            </div>
+                            <div class="flex justify-between items-center mt-3 pt-2.5 border-t border-slate-700/50">
+                                <span class="text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-md">${prato.categoria || 'Geral'}</span>
+                                <button onclick="adicionarAoCarrinho('${prato.nome.replace(/'/g, "\\'")}', ${prato.preco})" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition">
+                                    <i class="fa-solid fa-plus text-[10px]"></i> Adicionar
+                                </button>
+                            </div>
+                        </div>
+                    </article>
+                `;
+                container.insertAdjacentHTML('beforeend', cardHTML);
+            });
+        }
+
+        function filtrarCategoria(categoria, btnTarget) {
+            categoriaAtual = categoria;
+            const cards = document.querySelectorAll('.product-card');
+            const btns = document.querySelectorAll('.cat-btn');
+
+            btns.forEach(btn => {
+                btn.classList.remove('bg-amber-500', 'text-slate-950', 'font-bold');
+                btn.classList.add('bg-slate-800', 'text-slate-300', 'font-medium');
+            });
+
+            btnTarget.classList.remove('bg-slate-800', 'text-slate-300', 'font-medium');
+            btnTarget.classList.add('bg-amber-500', 'text-slate-950', 'font-bold');
+
+            cards.forEach(card => {
+                if (categoria === 'todos' || card.getAttribute('data-categoria') === categoria) {
+                    card.style.display = 'flex';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        }
+
+        function adicionarAoCarrinho(nome, preco) {
+            carrinho.push({ nome, preco });
+            atualizarBadge();
+            if ("vibrate" in navigator) navigator.vibrate(50);
+            alert(`✅ ${nome} adicionado ao carrinho!`);
+        }
+
+        function atualizarBadge() {
+            const badge = document.getElementById('cart-badge');
+            if (carrinho.length > 0) {
+                badge.innerText = carrinho.length;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+
+        async function enviarPedidoAoVivo() {
+            if (carrinho.length === 0) return;
+
+            const totalCalculado = carrinho.reduce((sum, item) => sum + item.preco, 0);
+
+            try {
+                const { data, error } = await supabaseClient
+                    .from('pedidos')
+                    .insert([
+                        {
+                            mesa_id: `Mesa ${mesaIdentificada}`,
+                            total: totalCalculado,
+                            status: 'RECEBIDO',
+                            tipo_chamado: 'NENHUM'
+                        }
+                    ]);
+
+                if (error) throw error;
+
+                if ("vibrate" in navigator) navigator.vibrate([100, 50, 100]);
+                alert(`🎉 Pedido enviado em tempo real para a cozinha (Mesa ${mesaIdentificada})!`);
+                carrinho = [];
+                atualizarBadge();
+            } catch (err) {
+                console.error("Erro ao enviar pedido:", err.message);
+                alert("Erro na conexão! Tente novamente.");
+            }
+        }
+
+        function abrirCarrinho() {
+            if(carrinho.length === 0) {
+                alert("Seu carrinho está vazio. Escolha um prato no cardápio!");
+            } else {
+                let resumo = carrinho.map((item, idx) => `${idx + 1}. ${item.nome} — R$ ${item.preco.toFixed(2)}`).join('\n');
+                let total = carrinho.reduce((sum, item) => sum + item.preco, 0);
+                if(confirm(`🛒 RESUMO DO SEU PEDIDO (MESA ${mesaIdentificada}):\n\n${resumo}\n\nTOTAL: R$ ${total.toFixed(2)}\n\nDeseja enviar agora para a cozinha?`)) {
+                    enviarPedidoAoVivo();
+                }
+            }
+        }
+
+        async function chamarGarconete() {
+            if(confirm(`Deseja chamar a equipe de atendimento para a Mesa ${mesaIdentificada}?`)) {
+                try {
+                    await supabaseClient.from('pedidos').insert([{ mesa_id: `Mesa ${mesaIdentificada}`, total: 0, status: 'RECEBIDO', tipo_chamado: 'GARCONETE' }]);
+                    alert("🔔 Chamado enviado! A garçonete já foi notificada no aplicativo.");
+                } catch(e) {
+                    alert("🔔 Chamado registrado localmente!");
+                }
+            }
+        }
+
+        async function solicitarConta() {
+            if(confirm(`Deseja solicitar o fechamento da conta para a Mesa ${mesaIdentificada}?`)) {
+                try {
+                    await supabaseClient.from('pedidos').insert([{ mesa_id: `Mesa ${mesaIdentificada}`, total: 0, status: 'RECEBIDO', tipo_chamado: 'CONTA' }]);
+                    alert("💳 Solicitação enviada! A equipe trará a comanda e a maquininha em instantes.");
+                } catch(e) {
+                    alert("💳 Solicitação registrada localmente!");
+                }
+            }
+        }
+    </script>
+</body>
+</html>

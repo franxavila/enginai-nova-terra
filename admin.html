@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ENGinAI — Painel Gestor Nova Terra</title>
+
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#0f172a">
+
+    <!-- Tailwind CSS, FontAwesome & Supabase JS SDK -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        .pb-safe { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen pb-safe font-sans antialiased">
+
+    <!-- HEADER DO PAINEL GESTOR -->
+    <header class="bg-slate-800 border-b border-slate-700 sticky top-0 z-40 px-4 py-3 shadow-md flex justify-between items-center">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
+                <i class="fa-solid fa-sliders"></i>
+            </div>
+            <div>
+                <h1 class="text-sm font-bold text-slate-100">Painel do Gestor</h1>
+                <p class="text-[10px] text-slate-400">Nova Terra • Supabase Active</p>
+            </div>
+        </div>
+        <button onclick="abrirModalNovoPrato()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 transition">
+            <i class="fa-solid fa-plus text-[10px]"></i> Novo Prato
+        </button>
+    </header>
+
+    <!-- STATUS RÁPIDO DO CARDÁPIO -->
+    <section class="p-4 grid grid-cols-2 gap-3 max-w-lg mx-auto">
+        <div class="bg-slate-800 p-3 rounded-xl border border-slate-700/80">
+            <span class="text-[10px] font-semibold text-slate-400 uppercase">Itens Ativos</span>
+            <p class="text-lg font-bold text-emerald-400 mt-0.5" id="count-ativos">0 Pratos</p>
+        </div>
+        <div class="bg-slate-800 p-3 rounded-xl border border-slate-700/80">
+            <span class="text-[10px] font-semibold text-slate-400 uppercase">Esgotados / Pausados</span>
+            <p class="text-lg font-bold text-rose-400 mt-0.5" id="count-pausados">0 Itens</p>
+        </div>
+    </section>
+
+    <!-- LISTAGEM E EDIÇÃO DE PRATOS DO SUPABASE -->
+    <main class="px-4 max-w-lg mx-auto space-y-3" id="admin-products-list">
+        <p id="loading-msg" class="text-center text-xs text-slate-500 py-8">Carregando cardápio do Supabase...</p>
+    </main>
+
+    <!-- MODAL DE CADASTRO DE NOVO PRATO -->
+    <div id="modal-prato" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700 w-full max-w-md rounded-2xl p-5 shadow-2xl space-y-4">
+            <div class="flex justify-between items-center border-b border-slate-700 pb-3">
+                <h3 class="font-bold text-sm text-slate-100">Cadastrar Novo Prato</h3>
+                <button onclick="fecharModalPrato()" class="text-slate-400 hover:text-slate-200"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <label class="text-[11px] font-medium text-slate-400">Nome do Prato</label>
+                    <input type="text" id="input-nome" placeholder="Ex: Filé à Parmegiana" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500 mt-1">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[11px] font-medium text-slate-400">Preço (R$)</label>
+                        <input type="number" id="input-preco" placeholder="00.00" step="0.50" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500 mt-1">
+                    </div>
+                    <div>
+                        <label class="text-[11px] font-medium text-slate-400">Categoria</label>
+                        <select id="select-categoria" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500 mt-1">
+                            <option value="Executivos">Executivos</option>
+                            <option value="Massas">Massas</option>
+                            <option value="Sobremesas">Sobremesas</option>
+                            <option value="Bebidas">Bebidas</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-[11px] font-medium text-slate-400">Descrição do Prato</label>
+                    <input type="text" id="input-descricao" placeholder="Acompanhamentos e ingredientes..." class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500 mt-1">
+                </div>
+                <div>
+                    <label class="text-[11px] font-medium text-slate-400">URL da Foto (Unsplash / Imgur)</label>
+                    <input type="text" id="input-foto" placeholder="https://..." class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500 mt-1">
+                </div>
+            </div>
+            <div class="flex gap-2 pt-2">
+                <button onclick="fecharModalPrato()" class="w-1/2 bg-slate-700 text-slate-300 font-bold text-xs py-2.5 rounded-xl">Cancelar</button>
+                <button onclick="salvarPratoSupabase()" class="w-1/2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs py-2.5 rounded-xl shadow-lg">Salvar no Supabase</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPT DE CONEXÃO SUPABASE -->
+    <script>
+        const SUPABASE_URL = 'https://riwinsdveamjhgxumnpe.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_z5h3mIH6oANIvJ53nozOgw_1fAuiuBi';
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let produtosCache = [];
+
+        // Inicializar leitura e escuta Realtime
+        document.addEventListener('DOMContentLoaded', () => {
+            carregarProdutosDoSupabase();
+            
+            // Escutar alterações na tabela 'produtos' ao vivo
+            supabaseClient
+                .channel('admin-products-realtime')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'produtos' }, () => {
+                    carregarProdutosDoSupabase();
+                })
+                .subscribe();
+        });
+
+        async function carregarProdutosDoSupabase() {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('produtos')
+                    .select('*')
+                    .order('id', { ascending: true });
+
+                if (error) throw error;
+
+                produtosCache = data || [];
+                renderizarListaProdutos(produtosCache);
+            } catch (err) {
+                console.error("Erro ao carregar produtos:", err.message);
+                document.getElementById('loading-msg').innerText = "Erro ao carregar cardápio do Supabase.";
+            }
+        }
+
+        function renderizarListaProdutos(produtos) {
+            const container = document.getElementById('admin-products-list');
+            container.innerHTML = '';
+
+            let ativos = 0;
+            let pausados = 0;
+
+            if (produtos.length === 0) {
+                container.innerHTML = `<p class="text-center text-xs text-slate-500 py-8">Nenhum prato cadastrado no banco.</p>`;
+                return;
+            }
+
+            produtos.forEach(prato => {
+                if (prato.ativo) ativos++;
+                else pausados++;
+
+                const statusBtnClass = prato.ativo 
+                    ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" 
+                    : "bg-rose-500/20 text-rose-400 border-rose-500/30";
+                
+                const statusText = prato.ativo ? "Ativo" : "Pausado";
+
+                const cardHTML = `
+                    <article class="bg-slate-800 rounded-xl p-3 border border-slate-700/80 shadow-md flex items-center justify-between gap-3">
+                        <img src="${prato.imagem_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=300&q=80'}" alt="${prato.nome}" class="w-16 h-16 rounded-lg object-cover">
+                        <div class="flex-1 min-w-0">
+                            <h3 class="font-bold text-xs text-slate-100 truncate">${prato.nome}</h3>
+                            <p class="text-[11px] text-amber-400 font-bold mt-0.5">R$ ${Number(prato.preco).toFixed(2)}</p>
+                            <span class="inline-block text-[9px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded mt-1">${prato.categoria || 'Geral'}</span>
+                        </div>
+                        <div class="flex flex-col items-end gap-2">
+                            <button onclick="toggleStatusPratoSupabase(${prato.id}, ${prato.ativo})" class="status-toggle text-[10px] font-bold px-2.5 py-1 rounded-full border ${statusBtnClass}">
+                                <i class="fa-solid fa-circle text-[8px] mr-1"></i> ${statusText}
+                            </button>
+                            <button onclick="editarPrecoPratoSupabase(${prato.id}, '${prato.nome}', ${prato.preco})" class="text-slate-400 hover:text-amber-400 text-xs p-1">
+                                <i class="fa-solid fa-pen"></i>
+                            </button>
+                        </div>
+                    </article>
+                `;
+                container.insertAdjacentHTML('beforeend', cardHTML);
+            });
+
+            document.getElementById('count-ativos').innerText = `${ativos} Prato(s)`;
+            document.getElementById('count-pausados').innerText = `${pausados} Item(ns)`;
+        }
+
+        async function toggleStatusPratoSupabase(id, statusAtual) {
+            try {
+                const { error } = await supabaseClient
+                    .from('produtos')
+                    .update({ ativo: !statusAtual })
+                    .eq('id', id);
+
+                if (error) throw error;
+                carregarProdutosDoSupabase();
+            } catch (err) {
+                alert("Erro ao alterar disponibilidade no Supabase!");
+                console.error(err);
+            }
+        }
+
+        async function editarPrecoPratoSupabase(id, nome, precoAtual) {
+            let novoPreco = prompt(`Alterar preço de "${nome}" no Supabase:`, Number(precoAtual).toFixed(2));
+            if (novoPreco !== null && !isNaN(novoPreco) && novoPreco.trim() !== '') {
+                try {
+                    const { error } = await supabaseClient
+                        .from('produtos')
+                        .update({ preco: parseFloat(novoPreco) })
+                        .eq('id', id);
+
+                    if (error) throw error;
+                    alert(`✅ Preço atualizado com sucesso!`);
+                    carregarProdutosDoSupabase();
+                } catch (err) {
+                    alert("Erro ao atualizar preço no Supabase!");
+                    console.error(err);
+                }
+            }
+        }
+
+        function abrirModalNovoPrato() {
+            document.getElementById('modal-prato').classList.remove('hidden');
+        }
+
+        function fecharModalPrato() {
+            document.getElementById('modal-prato').classList.add('hidden');
+        }
+
+        async function salvarPratoSupabase() {
+            const nome = document.getElementById('input-nome').value.trim();
+            const preco = document.getElementById('input-preco').value;
+            const categoria = document.getElementById('select-categoria').value;
+            const descricao = document.getElementById('input-descricao').value.trim();
+            const imagem_url = document.getElementById('input-foto').value.trim();
+
+            if (!nome || !preco) {
+                alert("Por favor, preencha o Nome e o Preço do prato!");
+                return;
+            }
+
+            try {
+                const { error } = await supabaseClient
+                    .from('produtos')
+                    .insert([
+                        {
+                            nome,
+                            preco: parseFloat(preco),
+                            categoria,
+                            descricao: descricao || 'Prato preparado com ingredientes selecionados do Nova Terra.',
+                            imagem_url: imagem_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80',
+                            ativo: true
+                        }
+                    ]);
+
+                if (error) throw error;
+
+                alert(`🎉 Prato "${nome}" cadastrado com sucesso no Supabase!`);
+                fecharModalPrato();
+                
+                // Limpar formulário
+                document.getElementById('input-nome').value = '';
+                document.getElementById('input-preco').value = '';
+                document.getElementById('input-descricao').value = '';
+                document.getElementById('input-foto').value = '';
+
+                carregarProdutosDoSupabase();
+            } catch (err) {
+                alert("Erro ao cadastrar novo prato no Supabase!");
+                console.error(err);
+            }
+        }
+    </script>
+</body>
+</html>

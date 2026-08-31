@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ENGinAI — Painel Cozinha KDS Nova Terra</title>
+
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#0f172a">
+
+    <!-- Tailwind CSS, FontAwesome & Supabase JS SDK -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        .pb-safe { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen pb-safe font-sans antialiased">
+
+    <!-- HEADER DA COZINHA (KDS) -->
+    <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-40 px-4 py-3 shadow-lg flex justify-between items-center">
+        <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-orange-500/20 border border-orange-500/30 text-orange-400 flex items-center justify-center font-bold">
+                <i class="fa-solid fa-fire-burner"></i>
+            </div>
+            <div>
+                <h1 class="text-sm font-bold text-slate-100">Painel da Cozinha (KDS)</h1>
+                <p class="text-[10px] text-slate-400">Nova Terra Operations • Realtime Active</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <span class="bg-slate-800 border border-slate-700 text-amber-400 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                <i class="fa-solid fa-bell text-amber-400 animate-bounce"></i>
+                <span id="chamados-count">0 Chamados</span>
+            </span>
+        </div>
+    </header>
+
+    <!-- ABAS DE NAVEGAÇÃO DA OPERAÇÃO -->
+    <nav class="bg-slate-900/80 border-b border-slate-800 px-4 py-2 flex gap-2">
+        <button onclick="alternarAba('pedidos')" id="tab-pedidos" class="flex-1 bg-amber-500 text-slate-950 font-bold text-xs py-2 rounded-lg shadow-md transition flex items-center justify-center gap-1.5">
+            <i class="fa-solid fa-utensils"></i> Pedidos
+        </button>
+        <button onclick="alternarAba('chamados')" id="tab-chamados" class="flex-1 bg-slate-800 text-slate-300 font-medium text-xs py-2 rounded-lg transition flex items-center justify-center gap-1.5">
+            <i class="fa-solid fa-hand"></i> Chamados
+        </button>
+    </nav>
+
+    <!-- SEÇÃO DE PEDIDOS (KDS CARDS REALTIME) -->
+    <main class="p-4 max-w-2xl mx-auto space-y-4" id="section-pedidos">
+        <p id="empty-kds-msg" class="text-center text-xs text-slate-500 py-8">Aguardando novos pedidos da mesa em tempo real...</p>
+    </main>
+
+    <!-- SEÇÃO DE CHAMADOS DE ATENDIMENTO -->
+    <main class="p-4 max-w-2xl mx-auto space-y-3 hidden" id="section-chamados">
+        <p id="empty-chamados-msg" class="text-center text-xs text-slate-500 py-8">Nenhum chamado de garçom no momento.</p>
+    </main>
+
+    <!-- SCRIPT DE MANIPULAÇÃO E REALTIME -->
+    <script>
+        const SUPABASE_URL = 'https://riwinsdveamjhgxumnpe.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_z5h3mIH6oANIvJ53nozOgw_1fAuiuBi';
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let countChamados = 0;
+
+        // Escutar WebSockets em tempo real
+        supabaseClient
+            .channel('kds-realtime')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pedidos' }, payload => {
+                console.log('🔔 NOVO REGISTRO CHEGOU NO SUPABASE:', payload.new);
+                tocarSomAlertaCozinha();
+                
+                if (payload.new.tipo_chamado && payload.new.tipo_chamado !== 'NENHUM') {
+                    adicionarChamado(payload.new);
+                } else {
+                    adicionarCardKDS(payload.new);
+                }
+            })
+            .subscribe();
+
+        function tocarSomAlertaCozinha() {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.5);
+            } catch(e) {
+                console.log("Alerta sonoro disparado!");
+            }
+        }
+
+        function adicionarCardKDS(pedido) {
+            const emptyMsg = document.getElementById('empty-kds-msg');
+            if (emptyMsg) emptyMsg.style.display = 'none';
+
+            const container = document.getElementById('section-pedidos');
+            const novoCard = `
+                <article class="bg-slate-900 rounded-2xl border-2 border-amber-500 shadow-2xl overflow-hidden animate-pulse">
+                    <div class="bg-slate-800 px-4 py-2.5 border-b border-slate-700 flex justify-between items-center">
+                        <div class="flex items-center gap-2">
+                            <span class="bg-amber-500 text-slate-950 font-black text-xs px-2.5 py-1 rounded-lg">${pedido.mesa_id || 'MESA 01'}</span>
+                            <span class="text-[11px] text-slate-400 font-medium">#${pedido.id || 'NEW'} • Agora</span>
+                        </div>
+                        <span class="text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full uppercase">
+                            Novo Pedido
+                        </span>
+                    </div>
+                    <div class="p-4 space-y-2">
+                        <div class="flex justify-between items-center text-xs font-semibold">
+                            <span class="text-slate-200">1x Combo / Pedido da Mesa</span>
+                            <span class="text-slate-400">R$ ${Number(pedido.total || 0).toFixed(2)}</span>
+                        </div>
+                    </div>
+                    <div class="bg-slate-800/60 p-3 border-t border-slate-800 flex justify-between items-center gap-2">
+                        <div class="text-xs font-bold text-amber-400">Total: R$ ${Number(pedido.total || 0).toFixed(2)}</div>
+                        <button onclick="avancarStatusPedido(this)" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-lg transition">
+                            <i class="fa-solid fa-fire"></i> Iniciar PREPARO
+                        </button>
+                    </div>
+                </article>
+            `;
+            container.insertAdjacentHTML('afterbegin', novoCard);
+        }
+
+        function adicionarChamado(chamado) {
+            const emptyMsg = document.getElementById('empty-chamados-msg');
+            if (emptyMsg) emptyMsg.style.display = 'none';
+
+            countChamados++;
+            document.getElementById('chamados-count').innerText = `${countChamados} Chamado(s)`;
+
+            const container = document.getElementById('section-chamados');
+            const cardChamado = `
+                <article class="bg-slate-900 p-4 rounded-xl border-l-4 border-amber-500 flex justify-between items-center shadow-lg">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-xs text-amber-400">${chamado.mesa_id || 'MESA 01'}</span>
+                            <span class="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded">${chamado.tipo_chamado} SOLICITADO</span>
+                        </div>
+                        <p class="text-xs text-slate-300 mt-1">Atendimento presencial solicitado no salão.</p>
+                        <span class="text-[10px] text-slate-500 mt-1 block">Agora mesmo</span>
+                    </div>
+                    <button onclick="atenderChamado(this)" class="bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 font-bold text-xs px-3 py-2 rounded-lg transition">
+                        <i class="fa-solid fa-check mr-1"></i> Atender
+                    </button>
+                </article>
+            `;
+            container.insertAdjacentHTML('afterbegin', cardChamado);
+        }
+
+        function alternarAba(aba) {
+            const btnPedidos = document.getElementById('tab-pedidos');
+            const btnChamados = document.getElementById('tab-chamados');
+            const secPedidos = document.getElementById('section-pedidos');
+            const secChamados = document.getElementById('section-chamados');
+
+            if(aba === 'pedidos') {
+                btnPedidos.className = "flex-1 bg-amber-500 text-slate-950 font-bold text-xs py-2 rounded-lg shadow-md transition flex items-center justify-center gap-1.5";
+                btnChamados.className = "flex-1 bg-slate-800 text-slate-300 font-medium text-xs py-2 rounded-lg transition flex items-center justify-center gap-1.5";
+                secPedidos.classList.remove('hidden');
+                secChamados.classList.add('hidden');
+            } else {
+                btnChamados.className = "flex-1 bg-amber-500 text-slate-950 font-bold text-xs py-2 rounded-lg shadow-md transition flex items-center justify-center gap-1.5";
+                btnPedidos.className = "flex-1 bg-slate-800 text-slate-300 font-medium text-xs py-2 rounded-lg transition flex items-center justify-center gap-1.5";
+                secChamados.classList.remove('hidden');
+                secPedidos.classList.add('hidden');
+            }
+        }
+
+        function avancarStatusPedido(btn) {
+            const card = btn.closest('article');
+            if(btn.innerText.includes('PREPARO')) {
+                btn.className = "bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-lg transition";
+                btn.innerHTML = `<i class="fa-solid fa-check"></i> Marcar como PRONTO`;
+                card.querySelector('.uppercase').className = "text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full uppercase";
+                card.querySelector('.uppercase').innerText = "Em Preparo";
+            } else if(btn.innerText.includes('PRONTO')) {
+                btn.className = "bg-slate-700 text-slate-300 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 transition";
+                btn.innerHTML = `<i class="fa-solid fa-box-archive"></i> Finalizar Pedido`;
+                card.querySelector('.uppercase').className = "text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full uppercase";
+                card.querySelector('.uppercase').innerText = "Pronto para Entrega";
+            } else {
+                card.remove();
+                alert("✅ Pedido finalizado!");
+            }
+        }
+
+        function atenderChamado(btn) {
+            btn.closest('article').remove();
+            countChamados = Math.max(0, countChamados - 1);
+            document.getElementById('chamados-count').innerText = `${countChamados} Chamado(s)`;
+            alert("🔔 Chamado atendido!");
+        }
+    </script>
+</body>
+</html>
