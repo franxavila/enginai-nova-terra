@@ -27,12 +27,22 @@
             </div>
             <div>
                 <h1 class="text-sm font-bold text-slate-100">Painel do Gestor</h1>
-                <p class="text-[10px] text-slate-400">Nova Terra • Supabase Active</p>
+                <p class="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                    <span id="wakelock-status-badge" class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.2 rounded text-[9px] font-bold flex items-center gap-1">
+                        <i class="fa-solid fa-lightbulb text-[8px]"></i> Tela Acesa
+                    </span>
+                    <span>• Nova Terra Active</span>
+                </p>
             </div>
         </div>
-        <button onclick="abrirModalNovoPrato()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 transition">
-            <i class="fa-solid fa-plus text-[10px]"></i> Novo Prato
-        </button>
+        <div class="flex items-center gap-2">
+            <button onclick="solicitarWakeLockManual()" class="bg-slate-700 hover:bg-slate-600 text-amber-400 p-1.5 rounded-lg text-xs border border-slate-600" title="Manter Tela Acesa">
+                <i class="fa-solid fa-sun"></i>
+            </button>
+            <button onclick="abrirModalNovoPrato()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 transition">
+                <i class="fa-solid fa-plus text-[10px]"></i> Novo Prato
+            </button>
+        </div>
     </header>
 
     <!-- STATUS RÁPIDO DO CARDÁPIO -->
@@ -123,17 +133,23 @@
         </div>
     </div>
 
-    <!-- SCRIPT DE CONEXÃO E UPLOAD -->
+    <!-- SCRIPT DE CONEXÃO, UPLOAD E SCREEN WAKE LOCK -->
     <script>
         const SUPABASE_URL = 'https://riwinsdveamjhgxumnpe.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_z5h3mIH6oANIvJ53nozOgw_1fAuiuBi';
         const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         let produtosCache = [];
+        let wakeLockObj = null;
 
         document.addEventListener('DOMContentLoaded', () => {
+            // 1. Ativar trava de tela acesa (Screen Wake Lock) para a Paola
+            ativarScreenWakeLock();
+
+            // 2. Carregar produtos do Supabase
             carregarProdutosDoSupabase();
             
+            // 3. Escutar atualizações no banco em tempo real
             supabaseClient
                 .channel('admin-products-realtime')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'produtos' }, () => {
@@ -142,6 +158,55 @@
                 .subscribe();
         });
 
+        // ============================================================================
+        // SCREEN WAKE LOCK API — IMPEDE QUE A TELA DA PAOLA APAGUE NO SALÃO
+        // ============================================================================
+        async function ativarScreenWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLockObj = await navigator.wakeLock.request('screen');
+                    atualizarBadgeWakeLock(true);
+                    console.log('💡 Screen Wake Lock ativo no Admin!');
+
+                    wakeLockObj.addEventListener('release', () => {
+                        atualizarBadgeWakeLock(false);
+                    });
+                } else {
+                    atualizarBadgeWakeLock(false);
+                }
+            } catch (err) {
+                console.error(`Falha Wake Lock Admin: ${err.message}`);
+                atualizarBadgeWakeLock(false);
+            }
+        }
+
+        document.addEventListener('visibilitychange', async () => {
+            if (wakeLockObj !== null && document.visibilityState === 'visible') {
+                await ativarScreenWakeLock();
+            }
+        });
+
+        function solicitarWakeLockManual() {
+            ativarScreenWakeLock();
+            alert("💡 Modo Salão Ativo: A tela do seu celular permanecerá ACESA enquanto você opera o painel do gestor!");
+        }
+
+        function atualizarBadgeWakeLock(ativo) {
+            const badge = document.getElementById('wakelock-status-badge');
+            if (!badge) return;
+
+            if (ativo) {
+                badge.className = "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.2 rounded text-[9px] font-bold flex items-center gap-1";
+                badge.innerHTML = `<i class="fa-solid fa-lightbulb text-[8px]"></i> Tela Acesa`;
+            } else {
+                badge.className = "bg-rose-500/20 text-rose-400 border border-rose-500/30 px-1.5 py-0.2 rounded text-[9px] font-bold flex items-center gap-1";
+                badge.innerHTML = `<i class="fa-solid fa-moon text-[8px]"></i> Tela Normal`;
+            }
+        }
+
+        // ============================================================================
+        // MANIPULAÇÃO DO CARDÁPIO & SUPABASE STORAGE
+        // ============================================================================
         async function carregarProdutosDoSupabase() {
             try {
                 const { data, error } = await supabaseClient
@@ -282,21 +347,18 @@
 
             let imagemFinal = urlInformada || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80';
 
-            // Se o usuário selecionou um arquivo de foto (câmera ou galeria)
             if (fileInput.files && fileInput.files[0]) {
                 const file = fileInput.files[0];
                 const fileExt = file.name.split('.').pop();
                 const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
 
                 try {
-                    // Upload para o Supabase Storage (cardapio-fotos)
                     const { error: uploadError } = await supabaseClient.storage
                         .from('cardapio-fotos')
                         .upload(fileName, file);
 
                     if (uploadError) throw uploadError;
 
-                    // Obter URL pública da foto enviada
                     const { data: publicUrlData } = supabaseClient.storage
                         .from('cardapio-fotos')
                         .getPublicUrl(fileName);
@@ -327,7 +389,6 @@
                 alert(`🎉 Prato "${nome}" cadastrado com sucesso!`);
                 fecharModalPrato();
                 
-                // Limpar campos
                 document.getElementById('input-nome').value = '';
                 document.getElementById('input-preco').value = '';
                 document.getElementById('input-descricao').value = '';
