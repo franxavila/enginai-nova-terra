@@ -27,11 +27,14 @@
             </div>
             <div>
                 <h1 class="text-sm font-bold text-slate-100">Painel da Cozinha (KDS)</h1>
-                <p class="text-[10px] text-slate-400">Nova Terra Operations • Realtime Active</p>
+                <p class="text-[10px] text-slate-400">Nova Terra Operations • Auto-Sync Active</p>
             </div>
         </div>
 
         <div class="flex items-center gap-2">
+            <button onclick="carregarPedidosDoBanco()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 p-2 rounded-lg text-xs border border-slate-700" title="Recarregar do Banco">
+                <i class="fa-solid fa-rotate"></i>
+            </button>
             <span class="bg-slate-800 border border-slate-700 text-amber-400 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5">
                 <i class="fa-solid fa-bell text-amber-400 animate-bounce"></i>
                 <span id="chamados-count">0 Chamados</span>
@@ -49,9 +52,9 @@
         </button>
     </nav>
 
-    <!-- SEÇÃO DE PEDIDOS (KDS CARDS REALTIME) -->
+    <!-- SEÇÃO DE PEDIDOS (KDS CARDS) -->
     <main class="p-4 max-w-2xl mx-auto space-y-4" id="section-pedidos">
-        <p id="empty-kds-msg" class="text-center text-xs text-slate-500 py-8">Aguardando novos pedidos da mesa em tempo real...</p>
+        <p id="empty-kds-msg" class="text-center text-xs text-slate-500 py-8">Buscando pedidos ativos no Supabase...</p>
     </main>
 
     <!-- SEÇÃO DE CHAMADOS DE ATENDIMENTO -->
@@ -59,7 +62,7 @@
         <p id="empty-chamados-msg" class="text-center text-xs text-slate-500 py-8">Nenhum chamado de garçom no momento.</p>
     </main>
 
-    <!-- SCRIPT DE MANIPULAÇÃO E REALTIME -->
+    <!-- SCRIPT DE HYDRATION E REALTIME PERSISTENTE -->
     <script>
         const SUPABASE_URL = 'https://riwinsdveamjhgxumnpe.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_z5h3mIH6oANIvJ53nozOgw_1fAuiuBi';
@@ -67,20 +70,68 @@
 
         let countChamados = 0;
 
-        // Escutar WebSockets em tempo real
-        supabaseClient
-            .channel('kds-realtime')
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pedidos' }, payload => {
-                console.log('🔔 NOVO REGISTRO CHEGOU NO SUPABASE:', payload.new);
-                tocarSomAlertaCozinha();
+        document.addEventListener('DOMContentLoaded', () => {
+            // 1. Carregar pedidos persistidos imediatamente ao abrir a tela
+            carregarPedidosDoBanco();
+
+            // 2. Escutar novos pedidos em tempo real via WebSockets
+            supabaseClient
+                .channel('kds-persistent-realtime')
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pedidos' }, payload => {
+                    console.log('🔔 NOVO REGISTRO CHEGOU:', payload.new);
+                    tocarSomAlertaCozinha();
+                    
+                    if (payload.new.tipo_chamado && payload.new.tipo_chamado !== 'NENHUM') {
+                        adicionarChamado(payload.new);
+                    } else {
+                        adicionarCardKDS(payload.new, true);
+                    }
+                })
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'pedidos' }, payload => {
+                    // Atualizar a tela se houver mudança no banco
+                    carregarPedidosDoBanco();
+                })
+                .subscribe();
+        });
+
+        // BUSCAR PEDIDOS PERSISTIDOS NO SUPABASE (HYDRATION)
+        async function carregarPedidosDoBanco() {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('pedidos')
+                    .select('*')
+                    .neq('status', 'ENTREGUE')
+                    .order('id', { ascending: false });
+
+                if (error) throw error;
+
+                const containerPedidos = document.getElementById('section-pedidos');
+                const containerChamados = document.getElementById('section-chamados');
                 
-                if (payload.new.tipo_chamado && payload.new.tipo_chamado !== 'NENHUM') {
-                    adicionarChamado(payload.new);
+                containerPedidos.innerHTML = '';
+                containerChamados.innerHTML = '';
+                countChamados = 0;
+
+                const pedidosNormais = data.filter(p => !p.tipo_chamado || p.tipo_chamado === 'NENHUM');
+                const chamadosAtendimento = data.filter(p => p.tipo_chamado && p.tipo_chamado !== 'NENHUM');
+
+                if (pedidosNormais.length === 0) {
+                    containerPedidos.innerHTML = `<p id="empty-kds-msg" class="text-center text-xs text-slate-500 py-8">Nenhum pedido pendente na cozinha.</p>`;
                 } else {
-                    adicionarCardKDS(payload.new);
+                    pedidosNormais.forEach(p => adicionarCardKDS(p, false));
                 }
-            })
-            .subscribe();
+
+                if (chamadosAtendimento.length === 0) {
+                    containerChamados.innerHTML = `<p id="empty-chamados-msg" class="text-center text-xs text-slate-500 py-8">Nenhum chamado de garçom no momento.</p>`;
+                } else {
+                    chamadosAtendimento.forEach(c => adicionarChamado(c));
+                }
+
+                document.getElementById('chamados-count').innerText = `${countChamados} Chamado(s)`;
+            } catch (err) {
+                console.error("Erro ao carregar pedidos:", err.message);
+            }
+        }
 
         function tocarSomAlertaCozinha() {
             try {
@@ -99,37 +150,63 @@
             }
         }
 
-        function adicionarCardKDS(pedido) {
+        function adicionarCardKDS(pedido, ehNovo) {
             const emptyMsg = document.getElementById('empty-kds-msg');
             if (emptyMsg) emptyMsg.style.display = 'none';
 
             const container = document.getElementById('section-pedidos');
-            const novoCard = `
-                <article class="bg-slate-900 rounded-2xl border-2 border-amber-500 shadow-2xl overflow-hidden animate-pulse">
-                    <div class="bg-slate-800 px-4 py-2.5 border-b border-slate-700 flex justify-between items-center">
-                        <div class="flex items-center gap-2">
-                            <span class="bg-amber-500 text-slate-950 font-black text-xs px-2.5 py-1 rounded-lg">${pedido.mesa_id || 'MESA 01'}</span>
-                            <span class="text-[11px] text-slate-400 font-medium">#${pedido.id || 'NEW'} • Agora</span>
-                        </div>
-                        <span class="text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full uppercase">
-                            Novo Pedido
-                        </span>
+            
+            let statusText = "Novo Pedido";
+            let statusBadgeClass = "bg-amber-500/20 text-amber-400 border-amber-500/30";
+            let btnClass = "bg-amber-500 hover:bg-amber-400 text-slate-950";
+            let btnText = `<i class="fa-solid fa-fire"></i> Iniciar PREPARO`;
+
+            if (pedido.status === 'PREPARANDO') {
+                statusText = "Em Preparo";
+                statusBadgeClass = "bg-blue-500/20 text-blue-400 border-blue-500/30";
+                btnClass = "bg-emerald-500 hover:bg-emerald-400 text-slate-950";
+                btnText = `<i class="fa-solid fa-check"></i> Marcar como PRONTO`;
+            } else if (pedido.status === 'PRONTO') {
+                statusText = "Pronto para Entrega";
+                statusBadgeClass = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+                btnClass = "bg-slate-700 text-slate-300";
+                btnText = `<i class="fa-solid fa-box-archive"></i> Finalizar Pedido`;
+            }
+
+            const animationClass = ehNovo ? "animate-bounce border-amber-500" : "border-slate-800";
+
+            const card = document.createElement('article');
+            card.id = `pedido-card-${pedido.id}`;
+            card.className = `bg-slate-900 rounded-2xl border-2 ${animationClass} shadow-2xl overflow-hidden transition`;
+            card.innerHTML = `
+                <div class="bg-slate-800 px-4 py-2.5 border-b border-slate-700 flex justify-between items-center">
+                    <div class="flex items-center gap-2">
+                        <span class="bg-amber-500 text-slate-950 font-black text-xs px-2.5 py-1 rounded-lg">${pedido.mesa_id || 'MESA 01'}</span>
+                        <span class="text-[11px] text-slate-400 font-medium">#${pedido.id}</span>
                     </div>
-                    <div class="p-4 space-y-2">
-                        <div class="flex justify-between items-center text-xs font-semibold">
-                            <span class="text-slate-200">1x Combo / Pedido da Mesa</span>
-                            <span class="text-slate-400">R$ ${Number(pedido.total || 0).toFixed(2)}</span>
-                        </div>
+                    <span class="status-label text-[10px] font-bold ${statusBadgeClass} px-2 py-0.5 rounded-full uppercase">
+                        ${statusText}
+                    </span>
+                </div>
+                <div class="p-4 space-y-2">
+                    <div class="flex justify-between items-center text-xs font-semibold">
+                        <span class="text-slate-200">1x Combo / Pedido do Salão</span>
+                        <span class="text-slate-400">R$ ${Number(pedido.total || 0).toFixed(2)}</span>
                     </div>
-                    <div class="bg-slate-800/60 p-3 border-t border-slate-800 flex justify-between items-center gap-2">
-                        <div class="text-xs font-bold text-amber-400">Total: R$ ${Number(pedido.total || 0).toFixed(2)}</div>
-                        <button onclick="avancarStatusPedido(this)" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-lg transition">
-                            <i class="fa-solid fa-fire"></i> Iniciar PREPARO
-                        </button>
-                    </div>
-                </article>
+                </div>
+                <div class="bg-slate-800/60 p-3 border-t border-slate-800 flex justify-between items-center gap-2">
+                    <div class="text-xs font-bold text-amber-400">Total: R$ ${Number(pedido.total || 0).toFixed(2)}</div>
+                    <button onclick="avancarStatusPedido(${pedido.id}, '${pedido.status}')" class="btn-action ${btnClass} font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-lg transition">
+                        ${btnText}
+                    </button>
+                </div>
             `;
-            container.insertAdjacentHTML('afterbegin', novoCard);
+            
+            if (ehNovo) {
+                container.prepend(card);
+            } else {
+                container.appendChild(card);
+            }
         }
 
         function adicionarChamado(chamado) {
@@ -140,22 +217,54 @@
             document.getElementById('chamados-count').innerText = `${countChamados} Chamado(s)`;
 
             const container = document.getElementById('section-chamados');
-            const cardChamado = `
-                <article class="bg-slate-900 p-4 rounded-xl border-l-4 border-amber-500 flex justify-between items-center shadow-lg">
-                    <div>
-                        <div class="flex items-center gap-2">
-                            <span class="font-bold text-xs text-amber-400">${chamado.mesa_id || 'MESA 01'}</span>
-                            <span class="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded">${chamado.tipo_chamado} SOLICITADO</span>
-                        </div>
-                        <p class="text-xs text-slate-300 mt-1">Atendimento presencial solicitado no salão.</p>
-                        <span class="text-[10px] text-slate-500 mt-1 block">Agora mesmo</span>
+            const cardChamado = document.createElement('article');
+            cardChamado.id = `chamado-card-${chamado.id}`;
+            cardChamado.className = "bg-slate-900 p-4 rounded-xl border-l-4 border-amber-500 flex justify-between items-center shadow-lg";
+            cardChamado.innerHTML = `
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="font-bold text-xs text-amber-400">${chamado.mesa_id || 'MESA 01'}</span>
+                        <span class="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded">${chamado.tipo_chamado} SOLICITADO</span>
                     </div>
-                    <button onclick="atenderChamado(this)" class="bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 font-bold text-xs px-3 py-2 rounded-lg transition">
-                        <i class="fa-solid fa-check mr-1"></i> Atender
-                    </button>
-                </article>
+                    <p class="text-xs text-slate-300 mt-1">Atendimento presencial solicitado no salão.</p>
+                </div>
+                <button onclick="atenderChamado(${chamado.id})" class="bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 font-bold text-xs px-3 py-2 rounded-lg transition">
+                    <i class="fa-solid fa-check mr-1"></i> Atender
+                </button>
             `;
-            container.insertAdjacentHTML('afterbegin', cardChamado);
+            container.prepend(cardChamado);
+        }
+
+        async function avancarStatusPedido(id, statusAtual) {
+            let novoStatus = 'PREPARANDO';
+            if (statusAtual === 'PREPARANDO') novoStatus = 'PRONTO';
+            else if (statusAtual === 'PRONTO') novoStatus = 'ENTREGUE';
+
+            try {
+                const { error } = await supabaseClient
+                    .from('pedidos')
+                    .update({ status: novoStatus })
+                    .eq('id', id);
+
+                if (error) throw error;
+                carregarPedidosDoBanco();
+            } catch (err) {
+                alert("Erro ao atualizar status do pedido!");
+            }
+        }
+
+        async function atenderChamado(id) {
+            try {
+                const { error } = await supabaseClient
+                    .from('pedidos')
+                    .update({ status: 'ENTREGUE' })
+                    .eq('id', id);
+
+                if (error) throw error;
+                carregarPedidosDoBanco();
+            } catch (err) {
+                alert("Erro ao atender chamado!");
+            }
         }
 
         function alternarAba(aba) {
@@ -175,31 +284,6 @@
                 secChamados.classList.remove('hidden');
                 secPedidos.classList.add('hidden');
             }
-        }
-
-        function avancarStatusPedido(btn) {
-            const card = btn.closest('article');
-            if(btn.innerText.includes('PREPARO')) {
-                btn.className = "bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-lg transition";
-                btn.innerHTML = `<i class="fa-solid fa-check"></i> Marcar como PRONTO`;
-                card.querySelector('.uppercase').className = "text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full uppercase";
-                card.querySelector('.uppercase').innerText = "Em Preparo";
-            } else if(btn.innerText.includes('PRONTO')) {
-                btn.className = "bg-slate-700 text-slate-300 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 transition";
-                btn.innerHTML = `<i class="fa-solid fa-box-archive"></i> Finalizar Pedido`;
-                card.querySelector('.uppercase').className = "text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full uppercase";
-                card.querySelector('.uppercase').innerText = "Pronto para Entrega";
-            } else {
-                card.remove();
-                alert("✅ Pedido finalizado!");
-            }
-        }
-
-        function atenderChamado(btn) {
-            btn.closest('article').remove();
-            countChamados = Math.max(0, countChamados - 1);
-            document.getElementById('chamados-count').innerText = `${countChamados} Chamado(s)`;
-            alert("🔔 Chamado atendido!");
         }
     </script>
 </body>
