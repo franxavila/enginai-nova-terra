@@ -31,11 +31,14 @@
                     <span id="wakelock-status-badge" class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.2 rounded text-[9px] font-bold flex items-center gap-1">
                         <i class="fa-solid fa-lightbulb text-[8px]"></i> Tela Acesa
                     </span>
-                    <span>• Nova Terra Active</span>
+                    <span>• Auto-Sync Active</span>
                 </p>
             </div>
         </div>
         <div class="flex items-center gap-2">
+            <button onclick="carregarProdutosDoSupabase()" class="bg-slate-700 hover:bg-slate-600 text-slate-300 p-1.5 rounded-lg text-xs border border-slate-600" title="Recarregar Dados">
+                <i class="fa-solid fa-rotate"></i>
+            </button>
             <button onclick="solicitarWakeLockManual()" class="bg-slate-700 hover:bg-slate-600 text-amber-400 p-1.5 rounded-lg text-xs border border-slate-600" title="Manter Tela Acesa">
                 <i class="fa-solid fa-sun"></i>
             </button>
@@ -45,7 +48,7 @@
         </div>
     </header>
 
-    <!-- STATUS RÁPIDO DO CARDÁPIO -->
+    <!-- STATUS RÁPIDO DO CARDÁPIO (INDICADORES EM TEMPO REAL) -->
     <section class="p-4 grid grid-cols-2 gap-3 max-w-lg mx-auto">
         <div class="bg-slate-800 p-3 rounded-xl border border-slate-700/80">
             <span class="text-[10px] font-semibold text-slate-400 uppercase">Itens Ativos</span>
@@ -57,12 +60,12 @@
         </div>
     </section>
 
-    <!-- LISTAGEM E EDIÇÃO DE PRATOS DO SUPABASE -->
+    <!-- LISTAGEM E EDIÇÃO DE PRATOS COM REALTIME SYNC -->
     <main class="px-4 max-w-lg mx-auto space-y-3" id="admin-products-list">
-        <p id="loading-msg" class="text-center text-xs text-slate-500 py-8">Carregando cardápio do Supabase...</p>
+        <p id="loading-msg" class="text-center text-xs text-slate-500 py-8">Sincronizando cardápio do Supabase...</p>
     </main>
 
-    <!-- MODAL DE CADASTRO COM SUPORTE À CÂMERA E GALERIA -->
+    <!-- MODAL DE CADASTRO COM CÂMERA E GALERIA -->
     <div id="modal-prato" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
         <div class="bg-slate-800 border border-slate-700 w-full max-w-md rounded-2xl p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center border-b border-slate-700 pb-3">
@@ -112,11 +115,10 @@
                         
                         <div id="preview-container" class="hidden flex items-center gap-2">
                             <img id="img-preview" src="" class="w-10 h-10 rounded-lg object-cover border border-amber-500">
-                            <span class="text-[10px] text-emerald-400 font-bold">Foto selecionada!</span>
+                            <span class="text-[10px] text-emerald-400 font-bold">Foto pronta!</span>
                         </div>
                     </div>
 
-                    <!-- CAMPO OPCIONAL DE LINK/URL -->
                     <div class="mt-2">
                         <span class="text-[9px] text-slate-500 uppercase font-semibold">Ou cole o link de uma imagem (opcional):</span>
                         <input type="text" id="input-foto-url" placeholder="https://..." class="w-full bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-300 focus:outline-none focus:border-amber-500 mt-1">
@@ -133,7 +135,7 @@
         </div>
     </div>
 
-    <!-- SCRIPT DE CONEXÃO, UPLOAD E SCREEN WAKE LOCK -->
+    <!-- SCRIPT DE SINCRONIZAÇÃO EM TEMPO REAL & WAKE LOCK -->
     <script>
         const SUPABASE_URL = 'https://riwinsdveamjhgxumnpe.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_z5h3mIH6oANIvJ53nozOgw_1fAuiuBi';
@@ -146,36 +148,29 @@
             // 1. Ativar trava de tela acesa (Screen Wake Lock) para a Paola
             ativarScreenWakeLock();
 
-            // 2. Carregar produtos do Supabase
+            // 2. Hydration inicial: Carregar produtos do PostgreSQL imediatamente
             carregarProdutosDoSupabase();
             
-            // 3. Escutar atualizações no banco em tempo real
+            // 3. Escuta ativa via WebSockets (Realtime) para qualquer alteração na tabela 'produtos'
             supabaseClient
-                .channel('admin-products-realtime')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'produtos' }, () => {
+                .channel('admin-products-realtime-channel')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'produtos' }, payload => {
+                    console.log('🔄 MUDANÇA DETECTADA NO ADMIN (REALTIME):', payload);
                     carregarProdutosDoSupabase();
                 })
                 .subscribe();
         });
 
-        // ============================================================================
-        // SCREEN WAKE LOCK API — IMPEDE QUE A TELA DA PAOLA APAGUE NO SALÃO
-        // ============================================================================
+        // SCREEN WAKE LOCK API
         async function ativarScreenWakeLock() {
             try {
                 if ('wakeLock' in navigator) {
                     wakeLockObj = await navigator.wakeLock.request('screen');
                     atualizarBadgeWakeLock(true);
-                    console.log('💡 Screen Wake Lock ativo no Admin!');
-
-                    wakeLockObj.addEventListener('release', () => {
-                        atualizarBadgeWakeLock(false);
-                    });
                 } else {
                     atualizarBadgeWakeLock(false);
                 }
             } catch (err) {
-                console.error(`Falha Wake Lock Admin: ${err.message}`);
                 atualizarBadgeWakeLock(false);
             }
         }
@@ -188,7 +183,7 @@
 
         function solicitarWakeLockManual() {
             ativarScreenWakeLock();
-            alert("💡 Modo Salão Ativo: A tela do seu celular permanecerá ACESA enquanto você opera o painel do gestor!");
+            alert("💡 Modo Salão: A tela do painel do gestor permanecerá ACESA continuamente!");
         }
 
         function atualizarBadgeWakeLock(ativo) {
@@ -204,9 +199,7 @@
             }
         }
 
-        // ============================================================================
-        // MANIPULAÇÃO DO CARDÁPIO & SUPABASE STORAGE
-        // ============================================================================
+        // CARREGAMENTO E SINCRONIZAÇÃO DO BANCO
         async function carregarProdutosDoSupabase() {
             try {
                 const { data, error } = await supabaseClient
@@ -220,7 +213,7 @@
                 renderizarListaProdutos(produtosCache);
             } catch (err) {
                 console.error("Erro ao carregar produtos:", err.message);
-                document.getElementById('loading-msg').innerText = "Erro ao carregar cardápio do Supabase.";
+                document.getElementById('loading-msg').innerText = "Erro ao sincronizar cardápio com o Supabase.";
             }
         }
 
@@ -293,7 +286,6 @@
                     .eq('id', id);
 
                 if (error) throw error;
-                carregarProdutosDoSupabase();
             } catch (err) {
                 alert("Erro ao alterar disponibilidade no Supabase!");
             }
@@ -310,7 +302,6 @@
 
                     if (error) throw error;
                     alert(`✅ Preço atualizado com sucesso!`);
-                    carregarProdutosDoSupabase();
                 } catch (err) {
                     alert("Erro ao atualizar preço!");
                 }
@@ -366,7 +357,7 @@
                     imagemFinal = publicUrlData.publicUrl;
                 } catch (storageErr) {
                     console.error("Erro no upload da foto:", storageErr);
-                    alert("Aviso: Não foi possível enviar a foto escolhida, usaremos a foto padrão.");
+                    alert("Aviso: Usaremos a imagem padrão para o prato.");
                 }
             }
 
@@ -392,8 +383,6 @@
                 document.getElementById('input-nome').value = '';
                 document.getElementById('input-preco').value = '';
                 document.getElementById('input-descricao').value = '';
-
-                carregarProdutosDoSupabase();
             } catch (err) {
                 alert("Erro ao cadastrar novo prato no Supabase!");
                 console.error(err);
